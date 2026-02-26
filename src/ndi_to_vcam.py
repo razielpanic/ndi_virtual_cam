@@ -481,7 +481,7 @@ class App:
     def __init__(self):
         self.bridge = NDIBridge()
         self._closing = False
-        self._last_selected_source: Optional[str] = None
+        self._geometry_save_timer = None
         self.root = tk.Tk()
         self.root.title("NDI Virtual Cam")
         self.root.configure(bg=COLORS["bg"])
@@ -618,6 +618,12 @@ class App:
         # Center placeholder
         for item in c.find_withtag("placeholder"):
             c.coords(item, w // 2, h // 2)
+        # Debounced geometry save — persist 1s after last resize/move
+        if self._geometry_save_timer is not None:
+            self.root.after_cancel(self._geometry_save_timer)
+        self._geometry_save_timer = self.root.after(
+            1000, lambda: self._save_pref("geometry", self.root.geometry())
+        )
 
     def _poll_signal(self):
         """Check if a signal requested shutdown."""
@@ -626,38 +632,25 @@ class App:
         else:
             self.root.after(500, self._poll_signal)
 
-    def _save_current_prefs(self):
-        """Gather and persist current window state. Safe to call multiple times."""
+    def _save_pref(self, key: str, value):
+        """Update a single preference key and persist to disk immediately."""
         try:
-            prefs = {}
-            # Geometry: only read if root still exists
-            try:
-                prefs["geometry"] = self.root.geometry()
-            except Exception:
-                # Root already destroyed — preserve previous geometry
-                saved = self._prefs.get("geometry")
-                if saved:
-                    prefs["geometry"] = saved
-
-            # Last source: prefer current bridge source, then explicit
-            # selection tracking, then previously-saved value
-            if self.bridge.stats.source_name:
-                prefs["last_source"] = self.bridge.stats.source_name
-            elif self._last_selected_source:
-                prefs["last_source"] = self._last_selected_source
-            elif self._prefs.get("last_source"):
-                prefs["last_source"] = self._prefs["last_source"]
-
+            prefs = _load_prefs()
+            prefs[key] = value
             _save_prefs(prefs)
         except Exception:
-            logger.warning("Failed to save preferences", exc_info=True)
+            logger.warning("Failed to save pref %s", key, exc_info=True)
 
     def _on_close(self):
         if self._closing:
             return
         self._closing = True
         logger.info("Shutting down")
-        self._save_current_prefs()
+        # Save final geometry (prefs are otherwise saved incrementally)
+        try:
+            self._save_pref("geometry", self.root.geometry())
+        except Exception:
+            pass
         self.bridge.shutdown()
         self.root.destroy()
 
@@ -665,9 +658,8 @@ class App:
         """Called when user selects a source from the menu bar."""
         # Cancel any pending auto-connect so it can't race with this selection
         self._auto_connect_source = None
-        # Track the selection so prefs can save it even if the bridge
-        # hasn't fully started before the app is killed
-        self._last_selected_source = source_name
+        # Persist source choice to disk immediately — don't rely on exit-time save
+        self._save_pref("last_source", source_name)
         # Stop any running or connecting bridge before starting a new one
         if (self.bridge.is_running()
                 or self.bridge.stats.state in (BridgeState.CONNECTING,
@@ -834,11 +826,8 @@ def main():
         signal.signal(signal.SIGHUP, _signal_handler)
 
     app = App()
-    # atexit: save prefs first, then tear down bridge.
-    # Registered in this order because atexit is LIFO — _save_current_prefs
-    # (registered second) fires first, reading bridge stats while still valid.
+    # atexit safety net: ensure bridge teardown even if _on_close doesn't run
     atexit.register(app.bridge.shutdown)
-    atexit.register(app._save_current_prefs)
     logger.info("Application started")
     app.run()
 
