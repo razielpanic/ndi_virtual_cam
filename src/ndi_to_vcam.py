@@ -703,6 +703,13 @@ class App:
                 self._auto_connect_source = None
                 logger.info("Auto-connecting to last source '%s'", source)
                 self._on_source_selected(source)
+            # Auto-reconnect when a previously connected source reappears
+            elif (self.bridge.stats.state == BridgeState.ERROR
+                    and self.bridge.stats.source_name
+                    and self.bridge.stats.source_name in sources):
+                source_name = self.bridge.stats.source_name
+                logger.info("Source '%s' reappeared — auto-reconnecting", source_name)
+                self._on_source_selected(source_name)
         else:
             self.sources_menu.add_command(label="Searching for sources...", state="disabled")
         self.root.after(self.SOURCE_REFRESH, self._poll_sources)
