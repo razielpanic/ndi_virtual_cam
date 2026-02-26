@@ -504,6 +504,8 @@ class App:
         self._schedule_polls()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(500, self._poll_signal)
+        # Save geometry on window move or resize (debounced)
+        self.root.bind("<Configure>", self._on_window_configure)
 
     # -- UI construction ----------------------------------------------------
 
@@ -618,7 +620,12 @@ class App:
         # Center placeholder
         for item in c.find_withtag("placeholder"):
             c.coords(item, w // 2, h // 2)
-        # Debounced geometry save — persist 1s after last resize/move
+
+    def _on_window_configure(self, event):
+        """Debounced save of window geometry on move or resize."""
+        # Only respond to root window events, not child widgets
+        if event.widget is not self.root:
+            return
         if self._geometry_save_timer is not None:
             self.root.after_cancel(self._geometry_save_timer)
         self._geometry_save_timer = self.root.after(
