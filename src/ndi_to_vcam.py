@@ -482,6 +482,7 @@ class App:
         self.bridge = NDIBridge()
         self._closing = False
         self._geometry_save_timer = None
+        self._last_error_message: Optional[str] = None
         self.root = tk.Tk()
         self.root.title("NDI Virtual Cam")
         self.root.configure(bg=COLORS["bg"])
@@ -723,6 +724,16 @@ class App:
         ch = self._canvas_height
 
         # -- Status overlay (top-left) --
+        # Track error messages across state transitions for reconnect UX
+        if stats.state == BridgeState.ERROR and stats.error_message:
+            self._last_error_message = stats.error_message
+        elif stats.state == BridgeState.RUNNING:
+            self._last_error_message = None
+
+        # Detect reconnect: CONNECTING state with a prior error still tracked
+        is_reconnecting = (stats.state == BridgeState.CONNECTING
+                           and self._last_error_message is not None)
+
         state_colors = {
             BridgeState.IDLE: COLORS["idle"],
             BridgeState.CONNECTING: COLORS["accent"],
@@ -737,15 +748,18 @@ class App:
         }
         status_color = state_colors.get(stats.state, COLORS["idle"])
         status_text = state_labels.get(stats.state, "")
-        if stats.state == BridgeState.CONNECTING and stats.status_detail:
+        if is_reconnecting:
+            status_text = "Reconnecting..."
+        elif stats.state == BridgeState.CONNECTING and stats.status_detail:
             status_text = stats.status_detail
         canvas.itemconfig(ids["status"], text=status_text, fill=status_color)
         canvas.itemconfig(ids["status_shadow"], text=status_text, fill=COLORS["overlay_shadow"])
 
         # -- Source name overlay (below status) --
-        # Source name is in the title bar during normal operation; only show
-        # it here during ERROR state where it gives useful context.
-        source_text = stats.source_name if stats.state == BridgeState.ERROR else ""
+        # Source name is in the title bar during normal operation; show it
+        # here during ERROR or reconnect states where it gives useful context.
+        source_text = stats.source_name if (stats.state == BridgeState.ERROR
+                                            or is_reconnecting) else ""
         canvas.itemconfig(ids["source"], text=source_text, fill=COLORS["overlay_fg"])
         canvas.itemconfig(ids["source_shadow"], text=source_text, fill=COLORS["overlay_shadow"])
 
@@ -774,8 +788,11 @@ class App:
         canvas.itemconfig(ids["frames_shadow"], text="")
 
         # -- Error overlay (center) --
+        # Persist error text during reconnect so it doesn't flash away
         if stats.state == BridgeState.ERROR and stats.error_message:
             error_text = stats.error_message
+        elif is_reconnecting:
+            error_text = self._last_error_message
         else:
             error_text = ""
         canvas.itemconfig(ids["error"], text=error_text, fill=COLORS["error"])
