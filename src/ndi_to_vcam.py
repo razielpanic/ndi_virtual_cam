@@ -615,7 +615,7 @@ class App:
 
         # -- FPS overlay (bottom-left) --
         if stats.state == BridgeState.RUNNING:
-            fps_text = f"{stats.output_fps:.1f} fps"
+            fps_text = f"{stats.output_fps:.0f} fps"
             if stats.output_fps < NDIBridge.FPS_WARN_THRESHOLD and stats.frames_sent > 30:
                 fps_color = COLORS["warning"]
             else:
