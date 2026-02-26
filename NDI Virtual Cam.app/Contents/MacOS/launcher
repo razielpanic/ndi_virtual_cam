@@ -1,0 +1,11 @@
+#!/bin/bash
+# NDI Virtual Cam — macOS app bundle launcher
+# This script is the executable inside the .app bundle.
+# It resolves the project directory relative to its own location
+# and delegates to run.sh for environment setup and app launch.
+
+# Resolve the project root (three levels up from Contents/MacOS/launcher)
+APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+
+# Delegate to run.sh which handles venv, deps, and app launch
+exec "$APP_DIR/run.sh"
