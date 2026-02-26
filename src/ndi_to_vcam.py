@@ -602,7 +602,9 @@ class App:
         canvas.itemconfig(ids["status_shadow"], text=status_text, fill=COLORS["overlay_shadow"])
 
         # -- Source name overlay (below status) --
-        source_text = stats.source_name if stats.state != BridgeState.IDLE else ""
+        # Source name is in the title bar during normal operation; only show
+        # it here during ERROR state where it gives useful context.
+        source_text = stats.source_name if stats.state == BridgeState.ERROR else ""
         canvas.itemconfig(ids["source"], text=source_text, fill=COLORS["overlay_fg"])
         canvas.itemconfig(ids["source_shadow"], text=source_text, fill=COLORS["overlay_shadow"])
 
