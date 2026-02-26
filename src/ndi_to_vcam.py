@@ -14,6 +14,7 @@ Usage:
 """
 
 import atexit
+import json
 import logging
 import os
 import signal
@@ -60,6 +61,31 @@ logger = _setup_logging()
 
 # Module-level shutdown event for signal handlers
 _shutdown_event = threading.Event()
+
+# Preferences file path
+_PREFS_PATH = os.path.expanduser("~/.config/ndi_virtual_cam/prefs.json")
+
+
+def _load_prefs() -> dict:
+    """Load user preferences from disk. Returns empty dict on any failure."""
+    try:
+        with open(_PREFS_PATH, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except (OSError, json.JSONDecodeError, ValueError):
+        pass
+    return {}
+
+
+def _save_prefs(prefs: dict):
+    """Persist user preferences to disk. Silently ignores failures."""
+    try:
+        os.makedirs(os.path.dirname(_PREFS_PATH), exist_ok=True)
+        with open(_PREFS_PATH, "w") as f:
+            json.dump(prefs, f, indent=2)
+    except OSError:
+        logger.warning("Could not save preferences to %s", _PREFS_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +488,16 @@ class App:
         self.root.minsize(480, 270)
         self.root.option_add('*tearOff', False)
 
+        # Load saved preferences (window geometry, last source)
+        self._prefs = _load_prefs()
+        saved_geometry = self._prefs.get("geometry")
+        if isinstance(saved_geometry, str) and saved_geometry:
+            try:
+                self.root.geometry(saved_geometry)
+            except tk.TclError:
+                pass  # Invalid geometry string — use default
+        self._auto_connect_source: Optional[str] = self._prefs.get("last_source")
+
         self._build_ui()
         self._schedule_polls()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -590,6 +626,17 @@ class App:
 
     def _on_close(self):
         logger.info("Shutting down")
+        # Save preferences before teardown
+        try:
+            prefs = {"geometry": self.root.geometry()}
+            if self.bridge.stats.source_name:
+                prefs["last_source"] = self.bridge.stats.source_name
+            elif self._prefs.get("last_source"):
+                # Preserve previous last_source if bridge was never started
+                prefs["last_source"] = self._prefs["last_source"]
+            _save_prefs(prefs)
+        except Exception:
+            pass
         self.bridge.shutdown()
         self.root.destroy()
 
@@ -624,6 +671,14 @@ class App:
                     label=source,
                     command=lambda s=source: self._on_source_selected(s),
                 )
+            # Auto-connect to last used source (once, on startup)
+            if (self._auto_connect_source
+                    and self.bridge.stats.state == BridgeState.IDLE
+                    and self._auto_connect_source in sources):
+                source = self._auto_connect_source
+                self._auto_connect_source = None
+                logger.info("Auto-connecting to last source '%s'", source)
+                self._on_source_selected(source)
         else:
             self.sources_menu.add_command(label="Searching for sources...", state="disabled")
         self.root.after(self.SOURCE_REFRESH, self._poll_sources)
