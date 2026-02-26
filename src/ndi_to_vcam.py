@@ -627,9 +627,10 @@ class App:
         canvas.itemconfig(ids["fps_shadow"], text=fps_text, fill=COLORS["overlay_shadow"])
 
         # -- Frames overlay (bottom-right) --
-        frames_text = f"{stats.frames_sent:,} frames" if stats.state == BridgeState.RUNNING else ""
-        canvas.itemconfig(ids["frames"], text=frames_text, fill=COLORS["overlay_fg"])
-        canvas.itemconfig(ids["frames_shadow"], text=frames_text, fill=COLORS["overlay_shadow"])
+        # Frame count not shown — FPS + "Live" status already confirm flow.
+        # Canvas items kept in _overlay_ids; just never populated.
+        canvas.itemconfig(ids["frames"], text="")
+        canvas.itemconfig(ids["frames_shadow"], text="")
 
         # -- Error overlay (center) --
         if stats.state == BridgeState.ERROR and stats.error_message:
