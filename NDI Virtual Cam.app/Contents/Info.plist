@@ -22,5 +22,7 @@
 	<true/>
 	<key>LSUIElement</key>
 	<false/>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 </dict>
 </plist>

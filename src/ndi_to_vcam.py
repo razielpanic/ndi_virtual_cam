@@ -914,6 +914,24 @@ class App:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _check_obs_installed() -> bool:
+    """Return True if OBS Studio is installed (required for virtual camera)."""
+    if os.path.isdir("/Applications/OBS.app"):
+        return True
+    # Also check via Spotlight in case it's installed elsewhere
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["mdfind", "kMDItemCFBundleIdentifier == 'com.obsproject.obs-studio'"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.stdout.strip():
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def main():
     def _signal_handler(signum, frame):
         _shutdown_event.set()
@@ -923,6 +941,28 @@ def main():
     # SIGHUP: terminal closed — ensure prefs are saved
     if hasattr(signal, "SIGHUP"):
         signal.signal(signal.SIGHUP, _signal_handler)
+
+    if not _check_obs_installed():
+        msg = (
+            "OBS Studio is required but not installed.\n\n"
+            "This app uses the OBS Virtual Camera plugin to create a "
+            "webcam device. OBS does not need to be running \u2014 just installed.\n\n"
+            "Download OBS Studio from:\nhttps://obsproject.com"
+        )
+        logger.error("OBS Studio not found — cannot create virtual camera")
+        # Show native dialog (visible when launched from .app with no terminal)
+        import subprocess
+        try:
+            result = subprocess.run([
+                "osascript", "-e",
+                f'display dialog "{msg}" with title "NDI Virtual Cam" '
+                f'buttons {{"Open Download Page", "OK"}} default button "OK" with icon stop',
+            ], capture_output=True, text=True, timeout=30)
+            if "Open Download Page" in (result.stdout or ""):
+                subprocess.Popen(["open", "https://obsproject.com"])
+        except Exception:
+            pass
+        sys.exit(1)
 
     app = App()
     # atexit safety net: ensure bridge teardown even if _on_close doesn't run
