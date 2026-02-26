@@ -88,6 +88,73 @@ def _save_prefs(prefs: dict):
         logger.warning("Could not save preferences to %s", _PREFS_PATH)
 
 
+def _set_macos_app_menu_name(name: str) -> None:
+    """Rename the macOS menu bar app menu from 'Python' to the given name.
+
+    Tk on macOS creates a Cocoa NSApplication whose first menu item (the app
+    menu, shown in bold in the menu bar) defaults to the executable name —
+    'Python' when run via a Python interpreter.  This function uses ctypes to
+    call into the Objective-C runtime and rename that menu after Tk has
+    initialised it.  Non-critical: silently ignored on failure or non-macOS.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        import ctypes
+        import ctypes.util
+
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.objc_msgSend.restype = ctypes.c_void_p
+        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+
+        # NSApplication.sharedApplication
+        NSApp = objc.objc_msgSend(
+            objc.objc_getClass(b"NSApplication"),
+            objc.sel_registerName(b"sharedApplication"),
+        )
+        main_menu = objc.objc_msgSend(
+            NSApp, objc.sel_registerName(b"mainMenu")
+        )
+        if not main_menu:
+            return
+
+        # First item in the menu bar is the app menu
+        objc.objc_msgSend.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long,
+        ]
+        app_item = objc.objc_msgSend(
+            main_menu, objc.sel_registerName(b"itemAtIndex:"), 0
+        )
+        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        submenu = objc.objc_msgSend(
+            app_item, objc.sel_registerName(b"submenu")
+        )
+        if not submenu:
+            return
+
+        # Build an NSString for the new title
+        objc.objc_msgSend.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p,
+        ]
+        ns_name = objc.objc_msgSend(
+            objc.objc_getClass(b"NSString"),
+            objc.sel_registerName(b"stringWithUTF8String:"),
+            name.encode("utf-8"),
+        )
+
+        # Rename the app submenu title (the bold label in the menu bar)
+        objc.objc_msgSend.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+        ]
+        objc.objc_msgSend(
+            submenu, objc.sel_registerName(b"setTitle:"), ns_name
+        )
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
@@ -517,6 +584,7 @@ class App:
         self.sources_menu = tk.Menu(menubar)
         menubar.add_cascade(label="Sources", menu=self.sources_menu)
         self.sources_menu.add_command(label="Searching for sources...", state="disabled")
+        _set_macos_app_menu_name("NDI Virtual Cam")
 
         # ---- Preview canvas (fills entire window) ----
         self.preview_canvas = tk.Canvas(
