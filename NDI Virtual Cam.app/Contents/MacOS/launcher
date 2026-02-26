@@ -1,11 +1,48 @@
 #!/bin/bash
-# NDI Virtual Cam — macOS app bundle launcher
+# NDI Virtual Cam - macOS app bundle launcher
 # This script is the executable inside the .app bundle.
 # It resolves the project directory relative to its own location
 # and delegates to run.sh for environment setup and app launch.
+#
+# When Finder launches a .app, the shell gets a minimal PATH that
+# excludes Homebrew (/opt/homebrew/bin, /usr/local/bin). We must
+# add common Python install locations before delegating to run.sh.
 
 # Resolve the project root (three levels up from Contents/MacOS/launcher)
 APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 
-# Delegate to run.sh which handles venv, deps, and app launch
-exec "$APP_DIR/run.sh"
+# ---------------------------------------------------------------------------
+# Augment PATH for Finder-launched environment
+# ---------------------------------------------------------------------------
+# Finder provides only /usr/bin:/bin:/usr/sbin:/sbin. Homebrew Python
+# (the expected install) lives in /opt/homebrew/bin (Apple Silicon) or
+# /usr/local/bin (Intel). Add both so run.sh can discover python3.
+for p in /opt/homebrew/bin /opt/homebrew/sbin /usr/local/bin; do
+    case ":$PATH:" in
+        *":$p:"*) ;;  # already present
+        *) PATH="$p:$PATH" ;;
+    esac
+done
+export PATH
+
+# ---------------------------------------------------------------------------
+# Delegate to run.sh, showing errors in a dialog on failure
+# ---------------------------------------------------------------------------
+# run.sh writes errors to stdout/stderr which are invisible when launched
+# from Finder (no terminal attached). Redirect output to a temp file so we
+# can show it in a native dialog if run.sh exits before reaching the app.
+#
+# On success, run.sh ends with exec (replacing itself with the Python app),
+# so this script's remaining lines only execute if run.sh fails early.
+LOG=$(mktemp /tmp/ndi-vcam-launch.XXXXXX)
+"$APP_DIR/run.sh" >"$LOG" 2>&1
+EXIT_CODE=$?
+
+# If we get here, run.sh exited without exec-ing the app (i.e., an error).
+MSG=$(cat "$LOG")
+rm -f "$LOG"
+
+if [ -n "$MSG" ]; then
+    osascript -e "display dialog \"$(echo "$MSG" | head -6)\" with title \"NDI Virtual Cam\" buttons {\"OK\"} default button \"OK\" with icon stop" &>/dev/null
+fi
+exit $EXIT_CODE
