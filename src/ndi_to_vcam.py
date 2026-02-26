@@ -480,6 +480,8 @@ class App:
 
     def __init__(self):
         self.bridge = NDIBridge()
+        self._closing = False
+        self._last_selected_source: Optional[str] = None
         self.root = tk.Tk()
         self.root.title("NDI Virtual Cam")
         self.root.configure(bg=COLORS["bg"])
@@ -624,29 +626,52 @@ class App:
         else:
             self.root.after(500, self._poll_signal)
 
-    def _on_close(self):
-        logger.info("Shutting down")
-        # Save preferences before teardown
+    def _save_current_prefs(self):
+        """Gather and persist current window state. Safe to call multiple times."""
         try:
-            prefs = {"geometry": self.root.geometry()}
+            prefs = {}
+            # Geometry: only read if root still exists
+            try:
+                prefs["geometry"] = self.root.geometry()
+            except Exception:
+                # Root already destroyed — preserve previous geometry
+                saved = self._prefs.get("geometry")
+                if saved:
+                    prefs["geometry"] = saved
+
+            # Last source: prefer current bridge source, then explicit
+            # selection tracking, then previously-saved value
             if self.bridge.stats.source_name:
                 prefs["last_source"] = self.bridge.stats.source_name
+            elif self._last_selected_source:
+                prefs["last_source"] = self._last_selected_source
             elif self._prefs.get("last_source"):
-                # Preserve previous last_source if bridge was never started
                 prefs["last_source"] = self._prefs["last_source"]
+
             _save_prefs(prefs)
         except Exception:
-            pass
+            logger.warning("Failed to save preferences", exc_info=True)
+
+    def _on_close(self):
+        if self._closing:
+            return
+        self._closing = True
+        logger.info("Shutting down")
+        self._save_current_prefs()
         self.bridge.shutdown()
         self.root.destroy()
 
     def _on_source_selected(self, source_name: str):
         """Called when user selects a source from the menu bar."""
-        # Guard: ignore selection while connecting (prevent race condition)
-        if self.bridge.stats.state == BridgeState.CONNECTING:
-            return
-        # Stop any running bridge (handles both re-select and switch)
-        if self.bridge.is_running() or self.bridge.stats.state == BridgeState.ERROR:
+        # Cancel any pending auto-connect so it can't race with this selection
+        self._auto_connect_source = None
+        # Track the selection so prefs can save it even if the bridge
+        # hasn't fully started before the app is killed
+        self._last_selected_source = source_name
+        # Stop any running or connecting bridge before starting a new one
+        if (self.bridge.is_running()
+                or self.bridge.stats.state in (BridgeState.CONNECTING,
+                                               BridgeState.ERROR)):
             self.bridge.stop()
         # Clear error and placeholder from canvas
         self.preview_canvas.delete("placeholder")
@@ -804,9 +829,16 @@ def main():
 
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
+    # SIGHUP: terminal closed — ensure prefs are saved
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, _signal_handler)
 
     app = App()
+    # atexit: save prefs first, then tear down bridge.
+    # Registered in this order because atexit is LIFO — _save_current_prefs
+    # (registered second) fires first, reading bridge stats while still valid.
     atexit.register(app.bridge.shutdown)
+    atexit.register(app._save_current_prefs)
     logger.info("Application started")
     app.run()
 
