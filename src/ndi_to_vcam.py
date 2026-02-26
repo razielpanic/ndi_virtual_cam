@@ -14,8 +14,6 @@ Usage:
 """
 
 import atexit
-import ctypes
-import ctypes.util
 import json
 import logging
 import os
@@ -88,53 +86,6 @@ def _save_prefs(prefs: dict):
             json.dump(prefs, f, indent=2)
     except OSError:
         logger.warning("Could not save preferences to %s", _PREFS_PATH)
-
-
-def _set_macos_process_name(name: str):
-    """Set the macOS process name so the menu bar shows our app name.
-
-    Must be called BEFORE tk.Tk() is created — tkinter reads the process
-    name at window creation time. Uses ctypes to call into the Objective-C
-    runtime (Foundation framework). Silently does nothing on non-macOS or
-    if the runtime calls fail.
-    """
-    if sys.platform != "darwin":
-        return
-    try:
-        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
-
-        # Configure objc_msgSend for id-returning calls
-        objc.objc_msgSend.restype = ctypes.c_void_p
-        objc.objc_msgSend.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-
-        objc.objc_getClass.restype = ctypes.c_void_p
-        objc.objc_getClass.argtypes = [ctypes.c_char_p]
-
-        objc.sel_registerName.restype = ctypes.c_void_p
-        objc.sel_registerName.argtypes = [ctypes.c_char_p]
-
-        # Create NSString from the name
-        NSString = objc.objc_getClass(b"NSString")
-        sel_string = objc.sel_registerName(b"stringWithUTF8String:")
-        # Need a variant of objc_msgSend that accepts a c_char_p argument
-        msgSend_str = ctypes.CFUNCTYPE(
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p
-        )(("objc_msgSend", objc))
-        ns_name = msgSend_str(NSString, sel_string, name.encode("utf-8"))
-
-        # Get [NSProcessInfo processInfo]
-        NSProcessInfo = objc.objc_getClass(b"NSProcessInfo")
-        sel_processInfo = objc.sel_registerName(b"processInfo")
-        process_info = objc.objc_msgSend(NSProcessInfo, sel_processInfo)
-
-        # Call [processInfo setProcessName:ns_name]
-        sel_setName = objc.sel_registerName(b"setProcessName:")
-        msgSend_set = ctypes.CFUNCTYPE(
-            None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
-        )(("objc_msgSend", objc))
-        msgSend_set(process_info, sel_setName, ns_name)
-    except Exception:
-        pass  # Non-critical — fall back to default "Python" menu name
 
 
 # ---------------------------------------------------------------------------
@@ -904,8 +855,6 @@ def main():
     # SIGHUP: terminal closed — ensure prefs are saved
     if hasattr(signal, "SIGHUP"):
         signal.signal(signal.SIGHUP, _signal_handler)
-
-    _set_macos_process_name("NDI Virtual Cam")
 
     app = App()
     # atexit safety net: ensure bridge teardown even if _on_close doesn't run

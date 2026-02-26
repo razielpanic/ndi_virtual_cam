@@ -84,4 +84,8 @@ fi
 # ---------------------------------------------------------------------------
 # 5. Launch the application
 # ---------------------------------------------------------------------------
-exec "$SCRIPT_DIR/.venv/bin/python3" "$SCRIPT_DIR/src/ndi_to_vcam.py" "$@"
+# Create a named symlink so macOS shows "NDI Virtual Cam" in the menu bar
+# instead of "python3" (macOS reads the executable basename for the app menu)
+NAMED="$SCRIPT_DIR/.venv/bin/NDI Virtual Cam"
+[ -L "$NAMED" ] || ln -sf python3 "$NAMED"
+exec "$NAMED" "$SCRIPT_DIR/src/ndi_to_vcam.py" "$@"
