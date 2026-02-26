@@ -175,6 +175,8 @@ class NDIBridge:
     def _run(self, source_name: str):
         receiver = None
         vcam = None
+        _devnull_fd = None
+        _real_stderr_fd = None
         try:
             # Set up NDI receiver
             receiver = Receiver(
@@ -242,6 +244,49 @@ class NDIBridge:
 
             logger.info("Receiving video: %dx%d", video_frame.xres, video_frame.yres)
 
+            # Suppress native-layer stderr spam (e.g. pyvirtualcam's
+            # "Pixel buffer size mismatch" printed every frame for some
+            # resolutions on macOS CMIOExtension backend).
+            _devnull_fd = os.open(os.devnull, os.O_WRONLY)
+            _real_stderr_fd = os.dup(2)
+            _stderr_suppressed = False
+            _mismatch_warned = False
+
+            def _send_frame(cam, frame):
+                """Send frame, suppressing repetitive native stderr warnings."""
+                nonlocal _stderr_suppressed, _mismatch_warned
+                if not _stderr_suppressed:
+                    # First call: capture stderr to detect native warnings
+                    r_fd, w_fd = os.pipe()
+                    os.set_blocking(r_fd, False)
+                    os.dup2(w_fd, 2)
+                    cam.send(frame)
+                    os.dup2(_real_stderr_fd, 2)
+                    os.close(w_fd)
+                    captured = b""
+                    try:
+                        captured = os.read(r_fd, 4096)
+                    except (OSError, BlockingIOError):
+                        pass
+                    os.close(r_fd)
+                    if b"ixel buffer size mismatch" in captured:
+                        if not _mismatch_warned:
+                            logger.warning(
+                                "Pixel buffer size mismatch from virtual camera "
+                                "backend (resolution %dx%d) — suppressing further "
+                                "warnings", cam.width, cam.height,
+                            )
+                            _mismatch_warned = True
+                        _stderr_suppressed = True
+                    elif captured:
+                        # Pass through any other stderr content
+                        os.write(_real_stderr_fd, captured)
+                else:
+                    # Suppress stderr for subsequent frames
+                    os.dup2(_devnull_fd, 2)
+                    cam.send(frame)
+                    os.dup2(_real_stderr_fd, 2)
+
             # Open virtual camera at the incoming resolution
             out_w = video_frame.xres
             out_h = video_frame.yres
@@ -297,6 +342,7 @@ class NDIBridge:
                             fmt=pyvirtualcam.PixelFormat.RGB,
                             print_fps=False,
                         )
+                        _stderr_suppressed = False  # re-check for new resolution
                     except Exception:
                         logger.error("Failed to recreate virtual camera at %dx%d", out_w, out_h, exc_info=True)
                         self.stats.state = BridgeState.ERROR
@@ -304,7 +350,7 @@ class NDIBridge:
                         break
 
                 # Send to virtual camera
-                vcam.send(rgb)
+                _send_frame(vcam, rgb)
 
                 # Update stats
                 now = time.monotonic()
@@ -344,6 +390,15 @@ class NDIBridge:
             self.stats.error_message = "Something went wrong. Stop and restart the bridge. If the problem continues, restart this application."
         finally:
             logger.info("Bridge loop ended — cleaning up")
+            # Restore stderr and close helper fds
+            try:
+                if _real_stderr_fd is not None:
+                    os.dup2(_real_stderr_fd, 2)
+                    os.close(_real_stderr_fd)
+                if _devnull_fd is not None:
+                    os.close(_devnull_fd)
+            except Exception:
+                pass
             if vcam is not None:
                 try:
                     vcam.close()
