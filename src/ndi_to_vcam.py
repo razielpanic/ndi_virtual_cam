@@ -414,10 +414,16 @@ class NDIBridge:
                 try:
                     raw = video_frame.get_array()
                     h, w = video_frame.yres, video_frame.xres
-                    rgba = raw.reshape(h, w, 4)
+                    expected = h * w * 4
+                    if raw.size != expected:
+                        # NDI may pad rows for alignment — extract using stride
+                        stride = raw.size // h
+                        rgba = raw.reshape(h, stride // 4, 4)[:, :w, :]
+                    else:
+                        rgba = raw.reshape(h, w, 4)
                     rgb = rgba[:, :, :3].copy()
                 except Exception:
-                    vcam.sleep_until_next_frame()
+                    time.sleep(0.033)
                     continue
 
                 # Handle resolution changes
