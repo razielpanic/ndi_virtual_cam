@@ -59,19 +59,21 @@ brew install python@3.12 python-tk@3.12
 ### 2. Clone and run
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ndi_virtual_cam.git
+git clone https://github.com/razielpanic/ndi_virtual_cam.git
 cd ndi_virtual_cam
 ./run.sh
 ```
 
 On first run, `run.sh` automatically creates a `.venv/`, installs dependencies, verifies imports, and launches the app. No manual `pip install` needed.
 
-Alternatively, double-click **NDI Virtual Cam.app** in the project directory.
+### Standalone deployment
 
-### 3. Auto-start at login (optional)
+The `.app` bundle is fully self-contained. Copy **NDI Virtual Cam.app** anywhere (Desktop, Applications, another machine) and double-click. First launch creates a virtual environment in `~/Library/Application Support/NDI Virtual Cam/` and installs dependencies automatically. If prerequisites are missing, a native dialog tells the operator exactly what to install.
+
+### Auto-start at login (optional)
 
 1. Open **System Settings → General → Login Items**
-2. Click **+** and select `NDI Virtual Cam.app` from the project directory
+2. Click **+** and select `NDI Virtual Cam.app`
 3. The app launches automatically on login alongside your other AV tools
 
 ## Usage
@@ -87,13 +89,13 @@ The window title shows the active source. Close the window to stop.
 
 ```
 src/ndi_to_vcam.py            — the entire application (single file)
-NDI Virtual Cam.app/          — macOS app bundle (Finder/Login Items compatible)
-run.sh                        — self-bootstrapping launcher
+NDI Virtual Cam.app/          — self-contained macOS app bundle
+  Contents/Resources/run.sh   — bundled launcher (venv in Application Support)
+  Contents/Resources/src/     — symlinks to repo source (resolved on copy)
+launcher.c                    — source for the native Mach-O launcher stub
+run.sh                        — development launcher (venv in project dir)
 requirements.txt              — Python dependencies
-docs/ARCHITECTURE.md          — system design, threading model, component diagram
-docs/SETUP.md                 — detailed installation and configuration
-docs/OPERATIONS.md            — day-of procedures, troubleshooting, failover
-docs/DECISIONS.md             — technical decision log
+docs/                         — architecture, setup, operations, decisions
 ```
 
 ## Network notes
@@ -110,7 +112,7 @@ NDI uses mDNS (Bonjour) for source discovery. All NDI devices must be on the sam
 
 ## License
 
-Internal tooling. See your organization's policies.
+MIT — see [LICENSE](LICENSE).
 
 ---
 

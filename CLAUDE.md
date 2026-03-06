@@ -73,7 +73,7 @@ Initial build — not yet tested on target hardware. The cyndilib receiver patte
 
 ## Origin
 
-Designed in conversation between Razi and Claude (February 2025). Full decision rationale in docs/DECISIONS.md. This is a client installation tool, not Razi's personal podcast setup.
+Full decision rationale in docs/DECISIONS.md.
 
 ---
 
