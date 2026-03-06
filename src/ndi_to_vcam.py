@@ -195,15 +195,14 @@ class NDIBridge:
     FPS_WARN_SUSTAINED_SECS = 5   # seconds below threshold before error bar
 
     def __init__(self):
-        self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.stats = BridgeStats()
 
-        # NDI finder (always running for source discovery)
+        # NDI finder — cyndilib's finder thread handles NDI discovery.
+        # We call update_sources() before reading to ensure the list
+        # reflects the latest state (get_source_names() alone can be stale).
         self._finder = Finder()
-        self._finder_sources: list[str] = []
-        self._finder.set_change_callback(self._on_finder_change)
         self._finder.open()
 
         # Preview frame buffer (downscaled RGB for the UI)
@@ -215,18 +214,13 @@ class NDIBridge:
 
     # -- Source discovery ---------------------------------------------------
 
-    def _on_finder_change(self):
-        """Called by cyndilib when NDI sources change on the network."""
-        try:
-            names = list(self._finder.get_source_names())
-            with self._lock:
-                self._finder_sources = names
-        except Exception:
-            pass
-
     def get_available_sources(self) -> list[str]:
-        with self._lock:
-            return list(self._finder_sources)
+        """Return current NDI sources (refreshed from the SDK)."""
+        try:
+            self._finder.update_sources()
+            return list(self._finder.get_source_names())
+        except Exception:
+            return []
 
     # -- Bridge control -----------------------------------------------------
 
