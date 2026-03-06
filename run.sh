@@ -52,7 +52,7 @@ REQS="$SCRIPT_DIR/requirements.txt"
 
 if [ ! -f "$MARKER" ] || [ "$REQS" -nt "$MARKER" ]; then
     echo "Installing dependencies..."
-    "$SCRIPT_DIR/.venv/bin/pip" install --quiet -r "$REQS"
+    "$SCRIPT_DIR/.venv/bin/pip" install --quiet --disable-pip-version-check -r "$REQS"
     if [ $? -ne 0 ]; then
         echo "ERROR: Failed to install dependencies."
         echo "Check your internet connection and try again."
