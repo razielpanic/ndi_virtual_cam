@@ -23,3 +23,12 @@ env/
 # Distribution
 *.dmg
 *.pkg
+
+# VBW planning workflow — local state, not tracked
+.vbw-planning/
+
+# Editor + tooling caches
+.claude/
+
+# Backup from history rewrite — safe to delete
+/.git.bak/
