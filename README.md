@@ -1,5 +1,7 @@
 # NDI Virtual Cam
 
+> **⚠️ SUPERSEDED for the Temple Isaiah deployment (2026-06).** TIPD2 runs **OBS.app directly** for the output virtual camera (OBS screen-captures Keynote → OBS Virtual Camera → Zoom), so this standalone util is **not in the live TI path**. It remains a valid general-purpose tool. As-built reference: TIPD2 `.planning/AS_BUILT_PIPELINE.md`.
+
 A lightweight macOS utility that receives an NDI video source and outputs it as a virtual webcam via OBS Virtual Camera. Built for production AV installations where NDI Virtual Input is already in use and a second, independent virtual camera path is needed.
 
 ## Why this exists
